@@ -1,13 +1,13 @@
 # Start from the latest golang base image
-FROM golang:alpine AS builder
+FROM golang:1.21 AS builder
 
 # Add Maintainer Info
 LABEL maintainer="Tomeu Uris tomeu.uris.dev@gmail.com"
 
-RUN apk --no-cache add ca-certificates gcc musl-dev
+RUN apt install ca-certificates gcc
 
-# Install curl and unzip
-RUN apk add --no-cache curl unzip git
+# # Install curl and unzip
+# RUN apt install curl unzip git
 
 # Install swag
 RUN go install github.com/swaggo/swag/cmd/swag@latest
@@ -22,23 +22,24 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy the source from the current directory to the Working Directory inside the container
-COPY . .
+COPY pkg pkg
+COPY cmd cmd
 
 # Generate Swagger documentation
-RUN swag init --parseDependency --parseInternal
+RUN swag init --parseDependency --parseInternal -g ./cmd/main.go -o ./docs
 
 # Build the Go app
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o main .
+RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o main ./cmd/main.go
 
 
 
 # Start a new stage for development
-FROM alpine:latest AS development
+FROM debian:latest AS development
 
-RUN apk --no-cache add ca-certificates
+RUN apt update && apt install -y ca-certificates
 
 # Create a new user and switch to that user
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 
 # Change to non-root privilege
 USER appuser
@@ -55,19 +56,19 @@ COPY --from=builder --chown=appuser:appgroup --chmod=444 /app/docs ./docs
 EXPOSE 8080
 
 # Command to run the executable
+# CMD ["ls", "-l"]
 CMD ["./main"] 
 
 
-
 # Start a new stage for production
-FROM alpine:latest AS production
+FROM debian:latest AS production
 
 ENV ENV=prod
 
-RUN apk --no-cache add ca-certificates
+RUN apt update && apt install -y ca-certificates
 
 # Create a new user and switch to that user
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 
 # Change to non-root privilege
 USER appuser
